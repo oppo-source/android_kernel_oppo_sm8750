@@ -85,6 +85,7 @@ static bool lpm_disallowed(s64 sleep_ns, int cpu)
 #endif
 	return false;
 }
+EXPORT_TRACEPOINT_SYMBOL_GPL(android_vh_scx_sched_lpm_disallowed_time);
 
 /**
  * histtimer_fn() - Will be executed when per cpu prediction timer expires
@@ -660,7 +661,10 @@ done:
  */
 static void lpm_reflect(struct cpuidle_device *dev, int state)
 {
+	struct lpm_cpu *cpu_gov = this_cpu_ptr(&lpm_cpu_data);
 
+	if (state && cluster_gov_ops && cluster_gov_ops->reflect)
+		cluster_gov_ops->reflect(cpu_gov);
 }
 
 /**

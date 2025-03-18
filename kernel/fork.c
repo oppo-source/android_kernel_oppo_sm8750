@@ -2510,6 +2510,7 @@ __latent_entropy struct task_struct *copy_process(
 	retval = perf_event_init_task(p, clone_flags);
 	if (retval)
 		goto bad_fork_cleanup_policy;
+
 	retval = audit_alloc(p);
 	if (retval)
 		goto bad_fork_cleanup_perf;

@@ -23,6 +23,21 @@
 
 #define MSEC_TO_NSEC (1000 * 1000)
 
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+#include "../../oplus_cpu/sched/sched_assist/sa_fair.h"
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+#include "../kernel/oplus_cpu/sched/frame_boost/frame_group.h"
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_CPU_CLOSE_LOOP)
+extern void walt_cl_update_util_ops(
+	unsigned long (*)(int cpu, unsigned long orig, bool ed_active),
+	unsigned long (*)(int cpu, unsigned long orig, bool ed_active));
+extern void walt_trig_cpufreq_update(int cpu);
+#endif
+
 #ifdef CONFIG_HZ_300
 /*
  * Tick interval becomes to 3333333 due to
@@ -93,6 +108,7 @@ enum freq_caps {
 #define SOC_ENABLE_FT_BOOST_TO_ALL			BIT(8)
 #define SOC_ENABLE_EXPERIMENT3						BIT(9)
 #define SOC_ENABLE_PIPELINE_SWAPPING_BIT		BIT(10)
+#define SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT		BIT(11)
 
 extern int soc_sched_lib_name_capacity;
 
@@ -249,6 +265,7 @@ struct walt_rq {
 	u64			old_estimated_time;
 	u64			curr_runnable_sum;
 	u64			prev_runnable_sum;
+
 	u64			nt_curr_runnable_sum;
 	u64			nt_prev_runnable_sum;
 	struct group_cpu_time	grp_time;
@@ -374,6 +391,11 @@ extern enum sched_boost_policy boost_policy;
 extern unsigned int sysctl_input_boost_ms;
 extern unsigned int sysctl_input_boost_freq[WALT_NR_CPUS];
 extern unsigned int sysctl_sched_boost_on_input;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_CEILING_FREE)
+extern unsigned int sysctl_ceiling_free_enable;
+extern unsigned int sysctl_cb_ceiling_free_enable;
+extern unsigned int sysctl_omrg_ceiling_free_enable;
+#endif
 extern unsigned int sysctl_sched_user_hint;
 extern unsigned int sysctl_sched_conservative_pl;
 extern unsigned int sysctl_sched_hyst_min_coloc_ns;
@@ -1012,14 +1034,13 @@ static inline bool task_fits_capacity(struct task_struct *p,
 	return capacity * 1024 > uclamp_task_util(p) * margin;
 }
 
+extern int pipeline_fits_smaller_cpus(struct task_struct *p);
 static inline bool task_fits_max(struct task_struct *p, int dst_cpu)
 {
 	unsigned long task_boost = per_task_boost(p);
-	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
 	cpumask_t other_cluster;
-
-	if (wts->pipeline_cpu != -1)
-		return true;
+	struct walt_task_struct *wts = (struct walt_task_struct *) p->android_vendor_data1;
+	int ret = -1;
 
 	/*
 	 * If a task is affined only to cpus of cluster then it cannot be a
@@ -1031,6 +1052,14 @@ static inline bool task_fits_max(struct task_struct *p, int dst_cpu)
 
 	if (is_max_possible_cluster_cpu(dst_cpu))
 		return true;
+
+	if (wts->pipeline_cpu != -1) {
+		ret = pipeline_fits_smaller_cpus(p);
+		if (ret == 0)
+			return false;
+		else if (ret == 1)
+			return true;
+	}
 
 	if (is_min_possible_cluster_cpu(dst_cpu)) {
 		if (task_boost_policy(p) == SCHED_BOOST_ON_BIG ||
@@ -1235,6 +1264,16 @@ static inline bool is_state1(void)
 /* determine if this task should be allowed to use a partially halted cpu */
 static inline bool task_reject_partialhalt_cpu(struct task_struct *p, int cpu)
 {
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_SCHED_ASSIST)
+	if (should_ux_task_skip_cpu(p, cpu))
+		return true;
+#endif
+
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_FRAME_BOOST)
+	if (fbg_skip_migration(p, task_cpu(p), cpu))
+		return true;
+#endif
+
 	if (p->prio < MAX_RT_PRIO)
 		return false;
 
@@ -1434,7 +1473,8 @@ static inline void walt_lockdep_assert(int cond, int cpu, struct task_struct *p)
 #define walt_lockdep_assert_rq(rq, p)			\
 	walt_lockdep_assert_held(&rq->__lock, cpu_of(rq), p)
 
-extern void pipeline_check(struct walt_rq *wrq);
+extern bool pipeline_check(struct walt_rq *wrq);
+extern void pipeline_rearrange(struct walt_rq *wrq, bool need_assign_heavy);
 extern bool enable_load_sync(int cpu);
 extern struct walt_related_thread_group *lookup_related_thread_group(unsigned int group_id);
 extern bool prev_is_sbt;
@@ -1500,4 +1540,8 @@ extern unsigned int load_sync_low_pct[MAX_CLUSTERS][MAX_CLUSTERS];
 extern unsigned int load_sync_low_pct_60fps[MAX_CLUSTERS][MAX_CLUSTERS];
 extern unsigned int load_sync_high_pct[MAX_CLUSTERS][MAX_CLUSTERS];
 extern unsigned int load_sync_high_pct_60fps[MAX_CLUSTERS][MAX_CLUSTERS];
+extern unsigned int sysctl_pipeline_special_task_util_thres;
+extern unsigned int sysctl_pipeline_non_special_task_util_thres;
+extern unsigned int sysctl_pipeline_pin_thres_low_pct;
+extern unsigned int sysctl_pipeline_pin_thres_high_pct;
 #endif /* _WALT_H */

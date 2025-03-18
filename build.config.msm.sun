@@ -22,7 +22,7 @@ BUILD_INIT_BOOT_IMG=1
 [ -z "${DT_OVERLAY_SUPPORT}" ] && DT_OVERLAY_SUPPORT=1
 
 if [ "${KERNEL_CMDLINE_CONSOLE_AUTO}" != "0" ]; then
-	KERNEL_VENDOR_CMDLINE+='console=ttyMSM0,115200n8 earlycon'
+	KERNEL_VENDOR_CMDLINE+='console=ttynull'
 fi
 
 KERNEL_VENDOR_CMDLINE+=' bootconfig '

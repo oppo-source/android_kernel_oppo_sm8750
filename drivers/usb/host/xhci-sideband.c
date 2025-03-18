@@ -287,7 +287,7 @@ xhci_sideband_create_interrupter(struct xhci_sideband *sb, int num_seg,
 {
 	int ret = 0;
 
-	if (!sb)
+	if (!sb || !sb->xhci)
 		return -ENODEV;
 
 	mutex_lock(&sb->mutex);

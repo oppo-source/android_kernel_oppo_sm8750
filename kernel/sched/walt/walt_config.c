@@ -100,6 +100,13 @@ void walt_config(void)
 	soc_feat_set(SOC_ENABLE_PER_TASK_BOOST_ON_MID_BIT);
 	soc_feat_set(SOC_ENABLE_COLOCATION_PLACEMENT_BOOST_BIT);
 	soc_feat_set(SOC_ENABLE_PIPELINE_SWAPPING_BIT);
+	soc_feat_set(SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT);
+
+	sysctl_pipeline_special_task_util_thres = 100;
+	sysctl_pipeline_non_special_task_util_thres = 200;
+	sysctl_pipeline_pin_thres_low_pct = 50;
+	sysctl_pipeline_pin_thres_high_pct = 60;
+
 	/* return if socinfo is not available */
 	if (!name)
 		return;
@@ -130,8 +137,8 @@ void walt_config(void)
 		load_sync_low_pct[0][1]		= sysctl_cluster01_load_sync[1];
 		load_sync_high_pct[0][1]	= sysctl_cluster01_load_sync[2];
 		load_sync_util_thres[1][0]	= sysctl_cluster10_load_sync[0];
-		load_sync_low_pct[0][1]		= sysctl_cluster10_load_sync[1];
-		load_sync_high_pct[0][1]	= sysctl_cluster10_load_sync[2];
+		load_sync_low_pct[1][0]		= sysctl_cluster10_load_sync[1];
+		load_sync_high_pct[1][0]	= sysctl_cluster10_load_sync[2];
 
 		sysctl_cluster01_load_sync_60fps[0]	= 400;
 		sysctl_cluster01_load_sync_60fps[1]	= 60;
@@ -143,8 +150,8 @@ void walt_config(void)
 		load_sync_low_pct_60fps[0][1]		= sysctl_cluster01_load_sync_60fps[1];
 		load_sync_high_pct_60fps[0][1]		= sysctl_cluster01_load_sync_60fps[2];
 		load_sync_util_thres_60fps[1][0]	= sysctl_cluster10_load_sync_60fps[0];
-		load_sync_low_pct_60fps[0][1]		= sysctl_cluster10_load_sync_60fps[1];
-		load_sync_high_pct_60fps[0][1]		= sysctl_cluster10_load_sync_60fps[2];
+		load_sync_low_pct_60fps[1][0]		= sysctl_cluster10_load_sync_60fps[1];
+		load_sync_high_pct_60fps[1][0]		= sysctl_cluster10_load_sync_60fps[2];
 
 		/* CPU0 needs an 9mS bias for all legacy smart freq reasons */
 		for (i = 1; i < LEGACY_SMART_FREQ; i++)
@@ -157,6 +164,7 @@ void walt_config(void)
 			smart_freq_legacy_reason_hyst_ms[PIPELINE_60FPS_OR_LESSER_SMART_FREQ][cpu] =
 				1;
 		}
+		soc_feat_unset(SOC_ENABLE_THERMAL_HALT_LOW_FREQ_BIT);
 	} else if (!strcmp(name, "PINEAPPLE")) {
 		soc_feat_set(SOC_ENABLE_SILVER_RT_SPREAD_BIT);
 		soc_feat_set(SOC_ENABLE_BOOST_TO_NEXT_CLUSTER_BIT);

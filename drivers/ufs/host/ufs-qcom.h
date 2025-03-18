@@ -586,6 +586,7 @@ struct ufs_qcom_host {
 	atomic_t num_reqs_threshold;
 	bool cur_freq_vote;
 	struct delayed_work fwork;
+	struct delayed_work iostack_work;
 	bool cpufreq_dis;
 	struct cpu_freq_info *cpu_info;
 	/* number of CPUs to bump up */
