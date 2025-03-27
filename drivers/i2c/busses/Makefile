@@ -3,6 +3,9 @@
 # Makefile for the i2c bus drivers.
 #
 
+#ifdef OPLUS_FEATURE_CHG_BASIC
+ccflags-y += -I$(srctree)/drivers/power/oplus/gauge_i2c_rst
+#endif
 # ACPI drivers
 obj-$(CONFIG_I2C_SCMI)		+= i2c-scmi.o
 

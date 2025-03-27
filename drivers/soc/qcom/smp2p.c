@@ -23,6 +23,16 @@
 
 #include <linux/ipc_logging.h>
 
+#ifdef OPLUS_FEATURE_SENSOR_WAKEUP_TRACE
+#include <linux/proc_fs.h>
+#define CREATE_TRACE_POINTS
+#include "trace_smp2p.h"
+#endif
+
+#ifdef CONFIG_OPLUS_FEATURE_SMP2P_STATS
+#include "../oplus/power/smp2p_stats/smp2p_stats.h"
+#endif
+
 /*
  * The Shared Memory Point to Point (SMP2P) protocol facilitates communication
  * of a single 32-bit value between two processors.  Each value has a single
@@ -277,7 +287,27 @@ static void qcom_smp2p_notify_in(struct qcom_smp2p *smp2p)
 		status |= *entry->irq_pending;
 
 		SMP2P_INFO("%d:\t%s: status:%0lx val:%0x\n",
-			   smp2p->remote_pid, entry->name, status, val);
+				smp2p->remote_pid, entry->name, status, val);
+		// #ifdef OPLUS_FEATURE_SENSOR_WAKEUP_INFO
+		if (!strcmp(entry->name, "sleepstate_see")) {
+#ifdef OPLUS_FEATURE_SENSOR_WAKEUP_TRACE
+			int sensor_type = (int)((val >> 16) & 0xFFFF);
+			int ap_stat = (int)((val >> 8) & 0xFF);
+			if (ap_stat == 0) {
+				trace_sensor_wakeup_stat(sensor_type);
+			}
+			dev_err(smp2p->dev, "%d:%s: status:%lx sensor_type:%d ap_stat:%d\n",
+					smp2p->remote_pid, entry->name, status, sensor_type, ap_stat);
+#else
+			dev_err(smp2p->dev, "%d:\t%s: status:%0lx val:%0x\n",
+					smp2p->remote_pid, entry->name, status, val);
+#endif
+		}
+		// #endif // OPLUS_FEATURE_SENSOR_WAKEUP_INFO
+
+#ifdef CONFIG_OPLUS_FEATURE_SMP2P_STATS
+		update_smp2p_stats_info(smp2p->local_pid, smp2p->remote_pid, val >> SENSOR_TYPE_SHIFT);
+#endif
 
 		/* No changes of this entry? */
 		if (!status)
@@ -582,6 +612,10 @@ static int qcom_smp2p_probe(struct platform_device *pdev)
 	smp2p->dev = &pdev->dev;
 	INIT_LIST_HEAD(&smp2p->inbound);
 	INIT_LIST_HEAD(&smp2p->outbound);
+
+#ifdef CONFIG_OPLUS_FEATURE_SMP2P_STATS
+	create_oplus_smp2p_node();
+#endif
 
 	platform_set_drvdata(pdev, smp2p);
 

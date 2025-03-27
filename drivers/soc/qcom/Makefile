@@ -1,4 +1,7 @@
 # SPDX-License-Identifier: GPL-2.0
+CFLAGS_fsa4480-i2c.o += -I$(srctree)/drivers/usb/typec/tcpc/inc \
+			-I$(srctree)/drivers/power/oplus/v2/include
+CFLAGS_wcd939x-i2c.o += -I$(srctree)/drivers/power/oplus/v2/include
 CFLAGS_rpmh-rsc.o := -I$(src)
 obj-$(CONFIG_QCOM_AOSS_QMP) +=	qcom_aoss.o
 obj-$(CONFIG_QCOM_GENI_SE) +=	qcom-geni-se.o
@@ -26,10 +29,16 @@ qcom_rpmh-y			+= rpmh.o
 obj-$(CONFIG_QCOM_SMD_RPM)	+= rpm-proc.o smd-rpm.o
 obj-$(CONFIG_QCOM_SMEM) +=	smem.o
 obj-$(CONFIG_QCOM_SMEM_STATE) += smem_state.o
-obj-$(CONFIG_QCOM_SMP2P)	+= smp2p.o
+ifneq ($(CONFIG_OPLUS_SENSOR_WAKEUP_TRACE), n)
+CFLAGS_oplus_smp2p.o += -DOPLUS_FEATURE_SENSOR_WAKEUP_TRACE
+endif
+obj-$(CONFIG_QCOM_SMP2P)	+= oplus_smp2p.o
+oplus_smp2p-y   += smp2p.o
+oplus_smp2p-$(CONFIG_OPLUS_FEATURE_SMP2P_STATS)   += ../oplus/power/smp2p_stats/smp2p_stats.o
 obj-$(CONFIG_QCOM_SMSM)	+= smsm.o
 obj-$(CONFIG_QCOM_SMP2P_SLEEPSTATE) += smp2p_sleepstate.o
 obj-$(CONFIG_QSEE_IPC_IRQ_BRIDGE) += qsee_ipc_irq_bridge.o
+obj-$(CONFIG_QCOM_GLINK) += glink_probe.o
 obj-$(CONFIG_QCOM_SOCINFO)	+= socinfo.o
 obj-$(CONFIG_QCOM_CPU_PHYS_LOG_MAP) += cpu_phys_log_map.o
 obj-$(CONFIG_QCOM_DCC_V2) += dcc_v2.o
@@ -107,3 +116,4 @@ obj-$(CONFIG_MSM_PERFORMANCE) += msm_performance.o
 obj-$(CONFIG_QCOM_FSA4480_I2C) += fsa4480-i2c.o
 obj-$(CONFIG_SHOW_SUSPEND_EPOCH) += msm_show_epoch.o
 obj-$(CONFIG_QTI_PMIC_LPM)      += qti-pmic-lpm.o
+obj-$(CONFIG_QTI_DMOF_SCMI) += qti_dmof_scmi.o

@@ -16,6 +16,9 @@
 #include <ufs/ufshcd.h>
 #include <ufs/unipro.h>
 
+#if defined(CONFIG_UFSFEATURE)
+#include "ufsfeature.h"
+#endif
 #define MAX_UFS_QCOM_HOSTS	2
 #define MAX_U32                 (~(u32)0)
 #define MPHY_TX_FSM_STATE       0x41
@@ -586,6 +589,7 @@ struct ufs_qcom_host {
 	atomic_t num_reqs_threshold;
 	bool cur_freq_vote;
 	struct delayed_work fwork;
+	struct delayed_work iostack_work;
 	bool cpufreq_dis;
 	struct cpu_freq_info *cpu_info;
 	/* number of CPUs to bump up */
@@ -616,6 +620,9 @@ struct ufs_qcom_host {
 	unsigned long active_cmds;
 	u32 hs_gear;
 	u32 max_cpus;
+#if defined(CONFIG_UFSFEATURE)
+	struct ufsf_feature ufsf;
+#endif
 };
 
 static inline u32
@@ -748,4 +755,12 @@ static inline void ufs_qcom_ice_debug(struct ufs_qcom_host *host)
 }
 #endif /* !CONFIG_SCSI_UFS_CRYPTO */
 
+#if defined(CONFIG_UFSFEATURE)
+static inline struct ufsf_feature *ufs_qcom_get_ufsf(struct ufs_hba *hba)
+{
+	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
+
+	return &host->ufsf;
+}
+#endif
 #endif /* UFS_QCOM_H_ */
