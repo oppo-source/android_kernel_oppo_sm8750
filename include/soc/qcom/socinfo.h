@@ -97,11 +97,6 @@ enum subset_part_type {
 	NUM_PARTS_MAX,
 };
 
-enum subset_cluster_type {
-	CLUSTER_CPUSS,
-	NUM_CLUSTERS_MAX,
-};
-
 #if IS_ENABLED(CONFIG_QCOM_SOCINFO)
 uint32_t socinfo_get_id(void);
 uint32_t socinfo_get_serial_number(void);
@@ -111,7 +106,7 @@ int socinfo_get_pcode(void);
 char *socinfo_get_partinfo_part_name(unsigned int part_id);
 uint32_t socinfo_get_partinfo_chip_id(unsigned int part_id);
 uint32_t socinfo_get_partinfo_vulkan_id(unsigned int part_id);
-uint32_t socinfo_get_cluster_info(enum subset_cluster_type cluster);
+uint32_t socinfo_get_cluster_info(void);
 bool socinfo_get_part_info(enum subset_part_type part);
 int socinfo_get_part_count(enum subset_part_type part);
 int socinfo_get_subpart_info(enum subset_part_type part,

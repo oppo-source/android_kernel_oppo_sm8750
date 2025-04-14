@@ -784,13 +784,13 @@ static int etm4_enable_perf(struct coresight_device *csdev,
 	}
 	drvdata->trcid = (u8)trace_id;
 
-	coresight_csr_set_etr_atid(csdev, drvdata->trcid, true);
+	coresight_csr_set_etr_atid(csdev, drvdata->trcid, true, etm_event_get_path(event));
 
 	/* And enable it */
 	ret = etm4_enable_hw(drvdata);
 
 	if (ret)
-		coresight_csr_set_etr_atid(csdev, drvdata->trcid, false);
+		coresight_csr_set_etr_atid(csdev, drvdata->trcid, false, etm_event_get_path(event));
 
 out:
 	return ret;
@@ -818,7 +818,7 @@ static int etm4_enable_sysfs(struct coresight_device *csdev)
 	if (ret < 0)
 		goto unlock_sysfs_enable;
 
-	coresight_csr_set_etr_atid(csdev, drvdata->trcid, true);
+	coresight_csr_set_etr_atid(csdev, drvdata->trcid, true, NULL);
 
 	/*
 	 * Executing etm4_enable_hw on the cpu whose ETM is being enabled
@@ -833,7 +833,7 @@ static int etm4_enable_sysfs(struct coresight_device *csdev)
 		drvdata->sticky_enable = true;
 
 	if (ret) {
-		coresight_csr_set_etr_atid(csdev, drvdata->trcid, false);
+		coresight_csr_set_etr_atid(csdev, drvdata->trcid, false, NULL);
 		etm4_release_trace_id(drvdata);
 	}
 
@@ -974,7 +974,7 @@ static int etm4_disable_perf(struct coresight_device *csdev,
 	 * perf will release trace ids when _free_aux() is
 	 * called at the end of the session.
 	 */
-
+	coresight_csr_set_etr_atid(csdev, drvdata->trcid, false, etm_event_get_path(event));
 	return 0;
 }
 
@@ -996,6 +996,8 @@ static void etm4_disable_sysfs(struct coresight_device *csdev)
 	 * ensures that register writes occur when cpu is powered.
 	 */
 	smp_call_function_single(drvdata->cpu, etm4_disable_hw, drvdata, 1);
+
+	coresight_csr_set_etr_atid(csdev, drvdata->trcid, false, NULL);
 
 	spin_unlock(&drvdata->spinlock);
 	cpus_read_unlock();
@@ -1034,7 +1036,6 @@ static void etm4_disable(struct coresight_device *csdev,
 		break;
 	}
 
-	coresight_csr_set_etr_atid(csdev, drvdata->trcid, false);
 	if (mode)
 		local_set(&drvdata->mode, CS_MODE_DISABLED);
 }

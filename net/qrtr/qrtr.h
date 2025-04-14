@@ -55,5 +55,9 @@ int qrtr_peek_pkt_size(const void *data);
 
 int qrtr_get_service_id(unsigned int node_id, unsigned int port_id);
 
+#ifdef CONFIG_OPLUS_POWERINFO_STANDBY_DEBUG
+int qrtr_get_service_instance_id(unsigned int node_id, unsigned int port_id);
+#endif
+
 void qrtr_print_wakeup_reason(const void *data);
 #endif

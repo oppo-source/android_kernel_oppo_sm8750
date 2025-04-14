@@ -122,6 +122,27 @@ int qrtr_get_service_id(unsigned int node_id, unsigned int port_id)
 }
 EXPORT_SYMBOL_GPL(qrtr_get_service_id);
 
+#ifdef CONFIG_OPLUS_POWERINFO_STANDBY_DEBUG
+int qrtr_get_service_instance_id(unsigned int node_id, unsigned int port_id)
+{
+	struct qrtr_server *srv;
+	struct qrtr_node *node;
+	unsigned long index;
+
+	node = xa_load(&nodes, node_id);
+	if (!node)
+		return -EINVAL;
+
+	xa_for_each(&node->servers, index, srv) {
+		if (srv->node == node_id && srv->port == port_id)
+			return srv->instance;
+	}
+
+	return -EINVAL;
+}
+EXPORT_SYMBOL(qrtr_get_service_instance_id);
+#endif
+
 static int server_match(const struct qrtr_server *srv,
 			const struct qrtr_server_filter *f)
 {

@@ -182,7 +182,7 @@ static inline int __task_prio(const struct task_struct *p)
 	if (p->sched_class == &idle_sched_class)
 		return MAX_RT_PRIO + NICE_WIDTH; /* 140 */
 
-	return MAX_RT_PRIO + MAX_NICE; /* 120, squash fair */
+	return MAX_RT_PRIO + MAX_NICE; /* 119, squash fair */
 }
 
 /*
@@ -210,6 +210,7 @@ static inline bool prio_less(const struct task_struct *a,
 
 	if (pa == MAX_RT_PRIO + MAX_NICE)	/* fair */
 		return cfs_prio_less(a, b, in_fi);
+
 
 	return false;
 }
@@ -3732,6 +3733,7 @@ int select_task_rq(struct task_struct *p, int cpu, int wake_flags)
 	 * [ this allows ->select_task() to simply return task_cpu(p) and
 	 *   not worry about this generic constraint ]
 	 */
+
 	if (unlikely(!is_cpu_allowed(p, cpu)))
 		cpu = select_fallback_rq(task_cpu(p), p);
 
@@ -4850,6 +4852,7 @@ late_initcall(sched_core_sysctl_init);
  */
 int sched_fork(unsigned long clone_flags, struct task_struct *p)
 {
+
 	trace_android_rvh_sched_fork(p);
 
 	__sched_fork(clone_flags, p);
@@ -4895,7 +4898,6 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 		p->sched_class = &rt_sched_class;
 	else
 		p->sched_class = &fair_sched_class;
-
 	init_entity_runnable_average(&p->se);
 	trace_android_rvh_finish_prio_fork(p);
 
@@ -4913,6 +4915,7 @@ int sched_fork(unsigned long clone_flags, struct task_struct *p)
 	RB_CLEAR_NODE(&p->pushable_dl_tasks);
 #endif
 	return 0;
+
 }
 
 void sched_cgroup_fork(struct task_struct *p, struct kernel_clone_args *kargs)
@@ -5807,17 +5810,15 @@ void scheduler_tick(void)
 
 	if (sched_feat(LATENCY_WARN) && resched_latency)
 		resched_latency_warn(cpu, resched_latency);
-
 	perf_event_task_tick();
 
 	if (curr->flags & PF_WQ_WORKER)
 		wq_worker_tick(curr);
 
 #ifdef CONFIG_SMP
-	rq->idle_balance = idle_cpu(cpu);
-	trigger_load_balance(rq);
+		rq->idle_balance = idle_cpu(cpu);
+		trigger_load_balance(rq);
 #endif
-
 	trace_android_vh_scheduler_tick(rq);
 }
 
@@ -6120,6 +6121,7 @@ static void put_prev_task_balance(struct rq *rq, struct task_struct *prev,
 	 * We can terminate the balance pass as soon as we know there is
 	 * a runnable task of @class priority or higher.
 	 */
+
 	for_class_range(class, prev->sched_class, &idle_sched_class) {
 		if (class->balance(rq, prev, rf))
 			break;
@@ -6838,7 +6840,6 @@ static void __sched notrace __schedule(unsigned int sched_mode)
 		psi_sched_switch(prev, next, !task_on_rq_queued(prev));
 
 		trace_sched_switch(sched_mode & SM_MASK_PREEMPT, prev, next, prev_state);
-
 		/* Also unlocks the rq: */
 		rq = context_switch(rq, prev, next, &rf);
 	} else {
@@ -7991,7 +7992,6 @@ change:
 	preempt_disable();
 	head = splice_balance_callbacks(rq);
 	task_rq_unlock(rq, p, &rf);
-
 	if (pi) {
 		if (cpuset_locked)
 			cpuset_unlock();
@@ -10122,7 +10122,6 @@ void __init sched_init(void)
 #ifdef CONFIG_SMP
 	BUG_ON(&dl_sched_class != &stop_sched_class + 1);
 #endif
-
 	wait_bit_init();
 
 #ifdef CONFIG_FAIR_GROUP_SCHED
@@ -10291,7 +10290,6 @@ void __init sched_init(void)
 	balance_push_set(smp_processor_id(), false);
 #endif
 	init_sched_fair_class();
-
 	psi_init();
 
 	init_uclamp();
@@ -10777,6 +10775,7 @@ static int cpu_cgroup_css_online(struct cgroup_subsys_state *css)
 	struct task_group *tg = css_tg(css);
 	struct task_group *parent = css_tg(css->parent);
 
+
 	if (parent)
 		sched_online_group(tg, parent);
 
@@ -10831,8 +10830,9 @@ static void cpu_cgroup_attach(struct cgroup_taskset *tset)
 	struct task_struct *task;
 	struct cgroup_subsys_state *css;
 
-	cgroup_taskset_for_each(task, css, tset)
+	cgroup_taskset_for_each(task, css, tset) {
 		sched_move_task(task);
+	}
 
 	trace_android_rvh_cpu_cgroup_attach(tset);
 }

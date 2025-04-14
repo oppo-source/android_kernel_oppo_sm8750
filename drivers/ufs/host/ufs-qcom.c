@@ -33,9 +33,12 @@
 #include <linux/sched/walt.h>
 #endif
 #include <linux/nvmem-consumer.h>
+//bsp.storage.ufs 2021.10.14 add for /proc/devinfo/ufs
+#include <soc/oplus/ufs-oplus-dbg.h>
 
 #include <soc/qcom/ice.h>
 
+#include <trace/hooks/ufshcd.h>
 #include <ufs/ufshcd.h>
 #include "ufshcd-pltfrm.h"
 #include <ufs/unipro.h>
@@ -534,6 +537,38 @@ static int ufs_qcom_get_pwr_dev_param(struct ufs_qcom_dev_params *qcom_param,
 	agreed_pwr->hs_rate = qcom_param->hs_rate;
 	return 0;
 }
+
+#if defined(CONFIG_UFSFEATURE)
+static void ufs_vh_prep_fn(void *data, struct ufs_hba *hba, struct request *rq,
+			   struct ufshcd_lrb *lrbp, int *err)
+{
+	*err = ufsf_prep_fn(ufs_qcom_get_ufsf(hba), lrbp);
+}
+
+static void ufs_vh_compl_command(void *data, struct ufs_hba *hba,
+				 struct ufshcd_lrb *lrbp)
+{
+	struct scsi_cmnd *cmd = lrbp->cmd;
+	int scsi_status, result, ocs;
+
+	if (!cmd)
+		return;
+
+	ocs = lrbp->utr_descriptor_ptr->header.ocs & MASK_OCS;
+	if (ocs != OCS_SUCCESS)
+		return;
+
+	result = lrbp->ucd_rsp_ptr->header.transaction_code;
+	if (result != UPIU_TRANSACTION_RESPONSE)
+		return;
+
+	scsi_status = lrbp->ucd_rsp_ptr->header.status;
+	if (scsi_status != SAM_STAT_GOOD)
+		return;
+
+	ufsf_upiu_check_for_ccd(lrbp);
+}
+#endif
 
 static struct ufs_qcom_host *rcdev_to_ufs_host(struct reset_controller_dev *rcd)
 {
@@ -1896,8 +1931,17 @@ static int ufs_qcom_suspend(struct ufs_hba *hba, enum ufs_pm_op pm_op,
 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
 	int err = 0;
 
-	if (status == PRE_CHANGE)
+	//#ifdef CONFIG_OPLUS_UFS_DRIVER
+		ufs_sleep_time_get(hba);
+	//#endif
+
+	if (status == PRE_CHANGE) {
+#if defined(CONFIG_UFSFEATURE)
+		if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG)
+			ufsf_suspend(ufs_qcom_get_ufsf(hba), pm_op == UFS_SYSTEM_PM);
+#endif
 		return 0;
+	}
 
 	/*
 	 * If UniPro link is not active or OFF, PHY ref_clk, main PHY analog
@@ -1940,6 +1984,17 @@ static int ufs_qcom_resume(struct ufs_hba *hba, enum ufs_pm_op pm_op)
 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
 	unsigned long flags;
 	int err;
+
+	//#ifdef CONFIG_OPLUS_UFS_DRIVER
+		ufs_active_time_get(hba);
+	//#endif
+#if defined(CONFIG_UFSFEATURE)
+	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG) {
+		struct ufsf_feature *ufsf = ufs_qcom_get_ufsf(hba);
+
+		schedule_work(&ufsf->resume_work);
+	}
+#endif
 
 	if (host->vddp_ref_clk && (hba->rpm_lvl > UFS_PM_LVL_3 ||
 				   hba->spm_lvl > UFS_PM_LVL_3))
@@ -2496,7 +2551,8 @@ static void ufs_qcom_set_caps(struct ufs_hba *hba)
 	if (!host->disable_lpm) {
 		hba->caps |= UFSHCD_CAP_CLK_GATING |
 			UFSHCD_CAP_HIBERN8_WITH_CLK_GATING |
-			UFSHCD_CAP_CLK_SCALING |
+			/* To avoid deadlock problems caused by clkscaling, turn off clkscaling. */
+			/* UFSHCD_CAP_CLK_SCALING | */
 			UFSHCD_CAP_AUTO_BKOPS_SUSPEND |
 			UFSHCD_CAP_AGGR_POWER_COLLAPSE |
 			UFSHCD_CAP_WB_WITH_CLK_SCALING;
@@ -2539,7 +2595,7 @@ static int ufs_qcom_unvote_qos_all(struct ufs_hba *hba)
 
 	qcg = ufs_qos_req->qcg;
 	for (i = 0; i < ufs_qos_req->num_groups; i++, qcg++) {
-		flush_work(&qcg->vwork);
+		cancel_work_sync(&qcg->vwork);
 		if (!qcg->voted)
 			continue;
 		err = ufs_qcom_update_qos_constraints(qcg, QOS_MAX);
@@ -3632,6 +3688,39 @@ cell_put:
 	nvmem_cell_put(nvmem_cell);
 }
 
+/*feature-iostack-v001-begin*/
+#define IOSTACK_WORK_DELAY  (10 * HZ)
+static void iostack_monitor_work(struct work_struct *work)
+{
+	struct ufs_qcom_host *host = container_of(to_delayed_work(work),
+							struct ufs_qcom_host,
+							iostack_work);
+	struct ufs_hba *hba = host->hba;
+	struct msi_desc *desc;
+	unsigned int irqs = 0;
+	unsigned int self_block = hba->host->host_self_blocked;
+
+	if (is_mcq_enabled(hba)) {
+		msi_lock_descs(hba->dev);
+		msi_for_each_desc(desc, hba->dev, MSI_DESC_ALL) {
+			irqs += kstat_irqs_usr(desc->irq);
+		}
+		msi_unlock_descs(hba->dev);
+	} else {
+		irqs = kstat_irqs_usr(hba->irq);
+	}
+
+	pr_err("iostack: irqs = %d, self-block = %d\n", irqs, self_block);
+	schedule_delayed_work(&host->iostack_work, IOSTACK_WORK_DELAY);
+}
+
+static void ufs_iostack_init(struct ufs_qcom_host *host)
+{
+	INIT_DELAYED_WORK(&host->iostack_work, iostack_monitor_work);
+	schedule_delayed_work(&host->iostack_work, IOSTACK_WORK_DELAY);
+}
+/*feature-iostack-v001-end*/
+
 /**
  * ufs_qcom_init - bind phy with controller
  * @hba: host controller instance
@@ -3820,6 +3909,7 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 	ufs_qcom_save_host_ptr(hba);
 
 	ufs_qcom_qos_init(hba);
+	ufs_iostack_init(host);
 	ufs_qcom_parse_irq_affinity(hba);
 	ufs_qcom_ber_mon_init(hba);
 	host->ufs_ipc_log_ctx = ipc_log_context_create(UFS_QCOM_MAX_LOG_SZ,
@@ -3844,6 +3934,10 @@ static int ufs_qcom_init(struct ufs_hba *hba)
 		if (err)
 			dev_err(host->hba->dev, "Fail to register UFS panic notifier\n");
 	}
+
+	//#ifdef CONFIG_OPLUS_UFS_DRIVER
+		ufs_init_oplus_dbg(hba);
+	//#endif
 
 	return 0;
 
@@ -4271,6 +4365,15 @@ static void ufs_qcom_event_notify(struct ufs_hba *hba,
 	bool ber_th_exceeded = false;
 	bool disable_ber = true;
 
+	//#ifdef CONFIG_OPLUS_UFS_DRIVER
+	recordSignalerr(hba, *(u32 *)data, evt);
+	//#endif
+#if defined(CONFIG_UFSFEATURE)
+	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG) {
+		if (evt == UFS_EVT_WL_SUSP_ERR)
+			ufsf_resume(ufs_qcom_get_ufsf(hba), true);
+	}
+#endif
 	switch (evt) {
 	case UFS_EVT_PA_ERR:
 		if (disable_ber) {
@@ -4860,6 +4963,10 @@ static int ufs_qcom_device_reset(struct ufs_hba *hba)
 	struct ufs_qcom_host *host = ufshcd_get_variant(hba);
 	int ret = 0;
 
+#if defined(CONFIG_UFSFEATURE)
+	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG)
+		ufsf_reset_host(ufs_qcom_get_ufsf(hba));
+#endif
 	/* reset gpio is optional */
 	if (!host->device_reset)
 		return -EOPNOTSUPP;
@@ -4927,6 +5034,10 @@ static struct ufs_dev_quirk ufs_qcom_dev_fixups[] = {
 static void ufs_qcom_fixup_dev_quirks(struct ufs_hba *hba)
 {
 	ufshcd_fixup_dev_quirks(hba, ufs_qcom_dev_fixups);
+#if defined(CONFIG_UFSFEATURE)
+	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG)
+		ufsf_set_init_state(hba);
+#endif
 }
 
 /* Resources */
@@ -5154,6 +5265,20 @@ out:
 	return ret;
 }
 
+static void ufs_qcom_config_scsi_dev(struct scsi_device *sdev)
+{
+	ufs_oplus_init_sdev(sdev);
+
+#if defined(CONFIG_UFSFEATURE)
+	struct ufs_hba *hba = shost_priv(sdev->host);
+
+	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG) {
+		struct ufsf_feature *ufsf = ufs_qcom_get_ufsf(hba);
+
+		ufsf_slave_configure(ufsf, sdev);
+	}
+#endif
+}
 /*
  * struct ufs_hba_qcom_vops - UFS QCOM specific variant operations
  *
@@ -5185,7 +5310,16 @@ static const struct ufs_hba_variant_ops ufs_hba_qcom_vops = {
 	.op_runtime_config	= ufs_qcom_op_runtime_config,
 	.get_outstanding_cqs	= ufs_qcom_get_outstanding_cqs,
 	.config_esi		= ufs_qcom_config_esi,
+	.config_scsi_dev	= ufs_qcom_config_scsi_dev,
 };
+
+#if defined(CONFIG_UFSFEATURE)
+static void ufs_samsung_register_hooks(void)
+{
+	register_trace_android_vh_ufs_prepare_command(ufs_vh_prep_fn, NULL);
+	register_trace_android_vh_ufs_compl_command(ufs_vh_compl_command, NULL);
+}
+#endif
 
 /**
  * QCOM specific sysfs group and nodes
@@ -5568,7 +5702,17 @@ static void ufs_qcom_hook_compl_command(void *param, struct ufs_hba *hba,
 	if (lrbp && lrbp->cmd) {
 		struct request *rq = scsi_cmd_to_rq(lrbp->cmd);
 		int sz = rq ? blk_rq_sectors(rq) : 0;
-
+		struct scsi_cmnd *cmd = lrbp->cmd;
+		/* if cost more than 100ms, print out in dmesg for IO analyze */
+		if ((cmd->cmnd[0] == READ_10 || cmd->cmnd[0] == WRITE_10 || cmd->cmnd[0] == READ_16 || cmd->cmnd[0] == WRITE_16) &&
+		    ktime_us_delta(lrbp->compl_time_stamp, lrbp->issue_time_stamp) > 100000) {
+			printk_ratelimited(
+				KERN_WARNING "%s cost more than 100ms, it's %lldms\n",
+				cmd->cmnd[0] == READ_10 ? "READ_10" :
+				cmd->cmnd[0] == WRITE_10 ? "WRITE_10" :
+				cmd->cmnd[0] == READ_16 ? "READ_16" : "WRITE_16",
+				ktime_us_delta(lrbp->compl_time_stamp, lrbp->issue_time_stamp) / 1000);
+		}
 		if (!is_mcq_enabled(hba)) {
 			ufs_qcom_log_str(host, ">,%x,%d,%x,%d\n",
 							lrbp->cmd->cmnd[0],
@@ -5807,6 +5951,13 @@ static int ufs_qcom_probe(struct platform_device *pdev)
 		return dev_err_probe(dev, err, "ufshcd_pltfrm_init() failed\n");
 
 	ufs_qcom_register_hooks();
+#if defined(CONFIG_UFSFEATURE)
+	struct ufs_hba *hba = platform_get_drvdata(pdev);
+
+	/* Register hook for Samsung feature */
+	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG)
+		ufs_samsung_register_hooks();
+#endif
 	return err;
 }
 
@@ -5844,6 +5995,13 @@ static int ufs_qcom_remove(struct platform_device *pdev)
 		atomic_notifier_chain_unregister(&panic_notifier_list,
 				&host->ufs_qcom_panic_nb);
 
+	//#ifdef CONFIG_OPLUS_UFS_DRIVER
+	ufs_remove_oplus_dbg();
+	//#endif
+#if defined(CONFIG_UFSFEATURE)
+	if (hba->dev_info.wmanufacturerid == UFS_VENDOR_SAMSUNG)
+		ufsf_remove(ufs_qcom_get_ufsf(hba));
+#endif
 	ufshcd_remove(hba);
 	platform_msi_domain_free_irqs(hba->dev);
 	return 0;

@@ -22,7 +22,9 @@ static int one_hundred = 100;
 static int one_thousand = 1000;
 static int one_thousand_twenty_four = 1024;
 static int two_thousand = 2000;
+#if !IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
 static int max_nr_pipeline = MAX_NR_PIPELINE;
+#endif
 
 /*
  * CFS task prio range is [100 ... 139]
@@ -50,6 +52,11 @@ unsigned int sysctl_sched_wake_up_idle[2];
 unsigned int sysctl_input_boost_ms;
 unsigned int sysctl_input_boost_freq[WALT_NR_CPUS];
 unsigned int sysctl_sched_boost_on_input;
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_CEILING_FREE)
+unsigned int sysctl_ceiling_free_enable;
+unsigned int sysctl_cb_ceiling_free_enable = 1;
+unsigned int sysctl_omrg_ceiling_free_enable = 1;
+#endif
 unsigned int sysctl_sched_early_up[MAX_MARGIN_LEVELS];
 unsigned int sysctl_sched_early_down[MAX_MARGIN_LEVELS];
 
@@ -121,6 +128,10 @@ unsigned int load_sync_low_pct[MAX_CLUSTERS][MAX_CLUSTERS];
 unsigned int load_sync_low_pct_60fps[MAX_CLUSTERS][MAX_CLUSTERS];
 unsigned int load_sync_high_pct[MAX_CLUSTERS][MAX_CLUSTERS];
 unsigned int load_sync_high_pct_60fps[MAX_CLUSTERS][MAX_CLUSTERS];
+unsigned int sysctl_pipeline_special_task_util_thres;
+unsigned int sysctl_pipeline_non_special_task_util_thres;
+unsigned int sysctl_pipeline_pin_thres_low_pct;
+unsigned int sysctl_pipeline_pin_thres_high_pct;
 
 /* range is [1 .. INT_MAX] */
 static int sysctl_task_read_pid = 1;
@@ -1262,6 +1273,35 @@ static struct ctl_table input_boost_sysctls[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= SYSCTL_INT_MAX,
 	},
+#if IS_ENABLED(CONFIG_OPLUS_FEATURE_CEILING_FREE)
+	{
+		.procname	= "ceiling_free_enable",
+		.data		= &sysctl_ceiling_free_enable,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "cb_ceiling_free_enable",
+		.data		= &sysctl_cb_ceiling_free_enable,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+	{
+		.procname	= "omrg_ceiling_free_enable",
+		.data		= &sysctl_omrg_ceiling_free_enable,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_ONE,
+	},
+#endif
 };
 
 static struct ctl_table walt_table[] = {
@@ -1628,6 +1668,7 @@ static struct ctl_table walt_table[] = {
 		.mode		= 0644,
 		.proc_handler	= sched_task_handler,
 	},
+#if !IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
 	{
 		.procname	= "sched_pipeline",
 		.data		= (int *) PIPELINE,
@@ -1635,6 +1676,7 @@ static struct ctl_table walt_table[] = {
 		.mode		= 0644,
 		.proc_handler	= sched_task_handler,
 	},
+#endif
 	{
 		.procname	= "task_load_boost",
 		.data		= (int *) LOAD_BOOST,
@@ -1748,6 +1790,7 @@ static struct ctl_table walt_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &one_thousand_twenty_four,
 	},
+#if !IS_ENABLED(CONFIG_OPLUS_FEATURE_PIPELINE)
 	{
 		.procname	= "sched_heavy_nr",
 		.data		= &sysctl_sched_heavy_nr,
@@ -1757,6 +1800,7 @@ static struct ctl_table walt_table[] = {
 		.extra1		= SYSCTL_ZERO,
 		.extra2		= &max_nr_pipeline,
 	},
+#endif
 	{
 		.procname	= "sched_sbt_enable",
 		.data		= &sysctl_sched_sbt_enable,
@@ -1854,6 +1898,42 @@ static struct ctl_table walt_table[] = {
 		.procname	= "sched_lrpb_active_ms",
 		.data		= &sysctl_sched_lrpb_active_ms,
 		.maxlen		= sizeof(unsigned int) * NUM_PIPELINE_BUSY_THRES,
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_pipeline_special_task_util_thres",
+		.data		= &sysctl_pipeline_special_task_util_thres,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_pipeline_non_special_task_util_thres",
+		.data		= &sysctl_pipeline_non_special_task_util_thres,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_pipeline_pin_thres_low_pct",
+		.data		= &sysctl_pipeline_pin_thres_low_pct,
+		.maxlen		= sizeof(unsigned int),
+		.mode		= 0644,
+		.proc_handler	= proc_dointvec_minmax,
+		.extra1		= SYSCTL_ZERO,
+		.extra2		= SYSCTL_INT_MAX,
+	},
+	{
+		.procname	= "sched_pipeline_pin_thres_high_pct",
+		.data		= &sysctl_pipeline_pin_thres_high_pct,
+		.maxlen		= sizeof(unsigned int),
 		.mode		= 0644,
 		.proc_handler	= proc_dointvec_minmax,
 		.extra1		= SYSCTL_ZERO,
